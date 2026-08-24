@@ -1,0 +1,60 @@
+{
+	"name": "dealroom",
+	"version": "0.1.0",
+	"private": true,
+	"description": "Turn an X group DM into a searchable deal flow directory.",
+	"license": "MIT",
+	"scripts": {
+		"setup": "node scripts/setup.mjs",
+		"dev": "prisma generate && next dev",
+		"build": "prisma generate && next build",
+		"start": "next start",
+		"lint": "biome check",
+		"lint:fix": "biome check --write",
+		"typecheck": "next typegen && tsc --noEmit",
+		"db:migrate": "prisma migrate deploy",
+		"db:migrate:dev": "prisma migrate dev",
+		"db:studio": "prisma studio",
+		"docker:up": "docker compose up -d",
+		"docker:down": "docker compose down",
+		"docker:logs": "docker compose logs -f",
+		"postinstall": "prisma generate",
+		"test": "node --test --conditions=react-server \"lib/**/*.test.ts\""
+	},
+	"dependencies": {
+		"@prisma/adapter-pg": "7.8.0",
+		"@prisma/client": "7.8.0",
+		"@tanstack/react-query": "5.90.20",
+		"@trpc/client": "11.9.0",
+		"@trpc/react-query": "11.9.0",
+		"@trpc/server": "11.9.0",
+		"@xdevplatform/chat-xdk": "^0.5.0",
+		"@xdevplatform/xdk": "^0.6.6",
+		"better-auth": "1.6.23",
+		"clsx": "2.1.1",
+		"date-fns": "4.1.0",
+		"juicebox-sdk": "^0.3.7",
+		"next": "16.2.10",
+		"pg": "8.17.2",
+		"react": "19.2.7",
+		"react-dom": "19.2.7",
+		"server-only": "^0.0.1",
+		"superjson": "2.2.6",
+		"tailwind-merge": "3.4.0",
+		"zod": "4.3.6"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "2.3.13",
+		"@tailwindcss/postcss": "4.3.2",
+		"@types/node": "25.0.10",
+		"@types/react": "19.2.10",
+		"@types/react-dom": "19.2.3",
+		"dotenv": "17.2.3",
+		"prisma": "7.8.0",
+		"tailwindcss": "4.3.2",
+		"typescript": "5.9.3"
+	},
+	"engines": {
+		"node": ">=22"
+	}
+}

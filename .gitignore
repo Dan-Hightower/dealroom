@@ -1,0 +1,10 @@
+node_modules/
+.next/
+build/
+.plasmo/
+out/
+.env
+.env.local
+*.tsbuildinfo
+next-env.d.ts
+.DS_Store

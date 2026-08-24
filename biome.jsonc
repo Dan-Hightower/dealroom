@@ -1,0 +1,30 @@
+{
+	"$schema": "https://biomejs.dev/schemas/2.3.13/schema.json",
+	"vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
+	"files": {
+		"includes": [
+			"**",
+			"!**/.next",
+			"!**/node_modules",
+			"!**/build",
+			"!**/.plasmo",
+			// Plasmo rewrites this on every build; let it own the file.
+			"!extension/tsconfig.json"
+		]
+	},
+	"formatter": { "enabled": true, "indentStyle": "tab" },
+	"css": { "parser": { "cssModules": true, "tailwindDirectives": true } },
+	"linter": {
+		"enabled": true,
+		"rules": { "recommended": true }
+	},
+	"overrides": [
+		{
+			// A test asserts a value exists on the line before it uses it, so the
+			// non-null assertion after that is a statement of what was checked.
+			"includes": ["**/*.test.ts"],
+			"linter": { "rules": { "style": { "noNonNullAssertion": "off" } } }
+		}
+	],
+	"assist": { "actions": { "source": { "organizeImports": "on" } } }
+}

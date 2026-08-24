@@ -1,0 +1,365 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Accounts. These four models are what Better Auth expects.
+// ---------------------------------------------------------------------------
+
+model User {
+  id            String   @id @default(cuid())
+  name          String
+  email         String   @unique
+  emailVerified Boolean  @default(false)
+  image         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @default(now()) @updatedAt
+
+  accounts    Account[]
+  sessions    Session[]
+  credentials UserCredentials?
+  dealRooms   DealRoom[]
+
+  @@map("user")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  expiresAt DateTime
+  ipAddress String?
+  userAgent String?
+  userId    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id @default(cuid())
+  accountId             String
+  providerId            String
+  userId                String
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @default(now()) @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, accountId])
+  @@index([userId])
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @default(now()) @updatedAt
+
+  @@index([identifier])
+  @@map("verification")
+}
+
+/// Everything this instance needs to reach an API on the user's behalf.
+///
+/// Secrets are encrypted at rest with a key derived from CREDENTIALS_SECRET,
+/// so a copy of the database on its own does not hand somebody your keys.
+model UserCredentials {
+  id     String @id @default(cuid())
+  userId String @unique
+
+  /// OAuth 2.0 user context for the X Chat API.
+  xClientId           String?
+  xAccessToken        String?
+  xRefreshToken       String?
+  xTokenExpiresAt     DateTime?
+  xUserId             String?
+  xUsername           String?
+  /// PIN that unlocks the XChat keys held in Juicebox. Never leaves this box.
+  xChatPin            String?
+  xChatJuiceboxConfig String?
+
+  /// Extraction.
+  xaiApiKey String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_credentials")
+}
+
+// ---------------------------------------------------------------------------
+// Deal flow. Everything below belongs to exactly one user.
+// ---------------------------------------------------------------------------
+
+enum DealFlowSourceType {
+  syndicate
+  fund
+  spv
+  newsletter
+  scout
+  community
+  other
+}
+
+/// Where a chat lives. Each platform has its own reader; everything below
+/// this line is the same shape once a message has been read.
+enum ChatPlatform {
+  x
+  whatsapp
+}
+
+enum DealRoomMessageKind {
+  message
+  join
+  leave
+  system
+}
+
+model DealRoom {
+  id              String       @id @default(cuid())
+  userId          String
+  name            String
+  platform        ChatPlatform @default(x)
+  /// Absent for a chat that only ever arrived as an exported file.
+  chatUrl         String?
+  conversationId  String?
+  description     String?
+  messageCount    Int          @default(0)
+  lastMessageAt   DateTime?
+  lastSyncedAt    DateTime?
+  lastExtractedAt DateTime?
+  lastSyncError   String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @default(now()) @updatedAt
+
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  members   DealRoomMember[]
+  messages  DealRoomMessage[]
+  startups  DealStartup[]
+  deals     Deal[]
+  holdings  StartupHolding[]
+  sources   DealFlowSource[]
+  interests DealInterest[]
+
+  @@unique([userId, chatUrl])
+  @@index([userId])
+  @@map("deal_room")
+}
+
+/// A person present in the group chat. Investors, mostly.
+model DealRoomMember {
+  id           String    @id @default(cuid())
+  roomId       String
+  /// Normalized handle, or a slug of the display name when no handle is known.
+  identityKey  String
+  name         String?
+  /// An @handle on X, a phone number in E.164 on WhatsApp.
+  handle       String?
+  profileUrl   String?
+  /// Self-introduction the member posted, usually right after joining.
+  bio          String?
+  email        String?
+  joinedAt     DateTime?
+  firstSeenAt  DateTime?
+  lastSeenAt   DateTime?
+  messageCount Int       @default(0)
+  notes        String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @default(now()) @updatedAt
+
+  room           DealRoom          @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  messages       DealRoomMessage[]
+  sharedDeals    Deal[]            @relation("DealSharedBy")
+  holdings       StartupHolding[]
+  runningSources DealFlowSource[]  @relation("DealFlowSourceRunBy")
+  interests      DealInterest[]
+
+  @@unique([roomId, identityKey])
+  @@index([roomId, joinedAt])
+  @@map("deal_room_member")
+}
+
+/// Raw captured chat lines. Kept so re-extraction never needs another scrape.
+model DealRoomMessage {
+  id           String              @id @default(cuid())
+  roomId       String
+  memberId     String?
+  /// Stable hash of author + timestamp + text, so re-syncs do not duplicate.
+  fingerprint  String
+  kind         DealRoomMessageKind @default(message)
+  authorHandle String?
+  authorName   String?
+  text         String
+  sentAt       DateTime?
+  sentAtLabel  String?
+  sequence     Int                 @default(0)
+  processedAt  DateTime?
+  createdAt    DateTime            @default(now())
+
+  room   DealRoom        @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  member DealRoomMember? @relation(fields: [memberId], references: [id], onDelete: SetNull)
+
+  @@unique([roomId, fingerprint])
+  @@index([roomId, sentAt])
+  @@index([roomId, processedAt])
+  @@map("deal_room_message")
+}
+
+/// Canonical record for any startup discussed in the room.
+model DealStartup {
+  id               String    @id @default(cuid())
+  roomId           String
+  identityKey      String
+  name             String
+  xHandle          String?
+  website          String?
+  description      String?
+  sector           String?
+  notes            String?
+  mentionCount     Int       @default(0)
+  firstMentionedAt DateTime?
+  lastMentionedAt  DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @default(now()) @updatedAt
+
+  room      DealRoom         @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  deals     Deal[]
+  holdings  StartupHolding[]
+  interests DealInterest[]
+
+  @@unique([roomId, identityKey])
+  @@index([roomId, lastMentionedAt])
+  @@map("deal_startup")
+}
+
+/// One instance of a startup being shared in the room.
+model Deal {
+  id              String    @id @default(cuid())
+  roomId          String
+  startupId       String
+  fingerprint     String
+  sharedById      String?
+  sharedByHandle  String?
+  sharedByName    String?
+  blurb           String?
+  terms           String?
+  roundStage      String?
+  url             String?
+  sharedAt        DateTime?
+  sourceMessageId String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @default(now()) @updatedAt
+
+  room      DealRoom        @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  startup   DealStartup     @relation(fields: [startupId], references: [id], onDelete: Cascade)
+  sharedBy  DealRoomMember? @relation("DealSharedBy", fields: [sharedById], references: [id], onDelete: SetNull)
+  interests DealInterest[]
+
+  @@unique([roomId, fingerprint])
+  @@index([roomId, sharedAt])
+  @@index([startupId])
+  @@map("deal")
+}
+
+/// A syndicate, fund, scout program or similar offered up inside the room.
+model DealFlowSource {
+  id              String             @id @default(cuid())
+  roomId          String
+  identityKey     String
+  name            String
+  type            DealFlowSourceType @default(other)
+  description     String?
+  url             String?
+  runById         String?
+  runByHandle     String?
+  runByName       String?
+  sharedAt        DateTime?
+  sourceMessageId String?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @default(now()) @updatedAt
+
+  room      DealRoom        @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  runBy     DealRoomMember? @relation("DealFlowSourceRunBy", fields: [runById], references: [id], onDelete: SetNull)
+  interests DealInterest[]
+
+  @@unique([roomId, identityKey])
+  @@index([roomId, sharedAt])
+  @@map("deal_flow_source")
+}
+
+/// A member naming a startup as one of their own investments.
+///
+/// Distinct from a Deal: "portfolio companies include Northwind" is a claim about
+/// what someone already holds, not an opportunity being offered to the room. A
+/// startup can have both, when one member holds it and another later shares it.
+model StartupHolding {
+  id              String    @id @default(cuid())
+  roomId          String
+  startupId       String
+  memberId        String
+  fingerprint     String
+  note            String?
+  claimedAt       DateTime?
+  sourceMessageId String?
+  createdAt       DateTime  @default(now())
+
+  room    DealRoom       @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  startup DealStartup    @relation(fields: [startupId], references: [id], onDelete: Cascade)
+  member  DealRoomMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, fingerprint])
+  @@index([startupId])
+  @@index([memberId])
+  @@map("startup_holding")
+}
+
+/// Someone raising their hand for a deal or a deal flow source.
+model DealInterest {
+  id               String    @id @default(cuid())
+  roomId           String
+  fingerprint      String
+  dealId           String?
+  startupId        String?
+  dealFlowSourceId String?
+  memberId         String?
+  personName       String?
+  personHandle     String?
+  personEmail      String?
+  note             String?
+  expressedAt      DateTime?
+  sourceMessageId  String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @default(now()) @updatedAt
+
+  room           DealRoom        @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  deal           Deal?           @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  startup        DealStartup?    @relation(fields: [startupId], references: [id], onDelete: Cascade)
+  dealFlowSource DealFlowSource? @relation(fields: [dealFlowSourceId], references: [id], onDelete: Cascade)
+  member         DealRoomMember? @relation(fields: [memberId], references: [id], onDelete: SetNull)
+
+  @@unique([roomId, fingerprint])
+  @@index([dealId])
+  @@index([dealFlowSourceId])
+  @@index([memberId])
+  @@map("deal_interest")
+}
